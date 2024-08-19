@@ -190,12 +190,12 @@ public:
 
         my_permit_request.min_sw_threads = 0;
         my_permit_request.max_sw_threads = 0;
-        my_permit_request.flags.request_as_inactive = 1;
+        my_permit_request.flags.request_as_inactive = true;
 
         tcm_result_t res = tcm_request_permit(client_id, my_permit_request, this, &my_permit_handle, nullptr);
         __TBB_ASSERT_EX(res == TCM_RESULT_SUCCESS, nullptr);
 
-        my_permit_request.flags.request_as_inactive = 0;
+        my_permit_request.flags.request_as_inactive = false;
     }
 
     void register_thread() override {
