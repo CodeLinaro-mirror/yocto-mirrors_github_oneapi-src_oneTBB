@@ -68,6 +68,7 @@ public:
                     t2 = std::chrono::steady_clock::now())
                 {
                     if (!my_arena.is_empty() && !my_arena.is_recall_requested()) {
+                        reset_wait();
                         return true;
                     }
 
