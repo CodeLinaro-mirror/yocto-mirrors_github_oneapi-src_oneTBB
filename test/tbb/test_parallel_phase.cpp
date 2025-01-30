@@ -27,7 +27,6 @@
 #include "common/spin_barrier.h"
 
 #include "tbb/task_arena.h"
-#include "tbb/parallel_for.h"
 
 void active_wait_for(std::chrono::microseconds duration) {
     for (auto t1 = std::chrono::steady_clock::now(), t2 = t1;
@@ -72,6 +71,7 @@ std::size_t measure_median_start_time(tbb::task_arena* ta, const F1& start = F1{
         for(std::size_t thr = 0; thr < num_threads-1; ++thr) {
             tbb::this_task_arena::enqueue(measure_start_time);
         }
+        start_times[tbb::this_task_arena::current_thread_index()] = std::chrono::steady_clock::now();
         barrier.wait();
         end();
         longest_start_times.push_back(get_longest_start(start_time));
