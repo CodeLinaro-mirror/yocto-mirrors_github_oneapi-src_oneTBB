@@ -88,7 +88,7 @@ public:
                         prolonged_pause();
                     }  else {
                         #if WIN32 || _WIN64
-                            d0::yield;
+                            d0::yield();
                         #else
                             std::this_thread::sleep_for(std::chrono::microseconds(100));
                         #endif
