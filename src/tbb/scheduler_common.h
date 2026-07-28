@@ -251,7 +251,7 @@ inline void prolonged_pause_impl() {
 }
 #endif
 
-inline void prolonged_pause() {
+inline void prolonged_pause(int deadline = 1000) {
 #if __TBB_WAITPKG_INTRINSICS_PRESENT
     if (governor::wait_package_enabled()) {
         std::uint64_t time_stamp = machine_time_stamp();
@@ -260,7 +260,7 @@ inline void prolonged_pause() {
         // Constant "1000" is ticks to wait for.
         // TODO : Modify this parameter based on empirical study of benchmarks.
         // First parameter 0 selects between a lower power (cleared) or faster wakeup (set) optimized state.
-        _tpause(0, time_stamp + 1000);
+        _tpause(0, time_stamp + deadline);
     }
     else
 #endif
@@ -282,7 +282,7 @@ public:
     // the time it takes for a thread to be woken up. Doing so would guarantee that we do
     // no worse than 2x the optimal spin time. Or perhaps a time-slice quantum is the right amount.
     stealing_loop_backoff(int num_workers, int yields_multiplier)
-        : my_pause_threshold{ 2 * (num_workers + 1) }
+        : my_pause_threshold{ 3 * (num_workers + 1) }
         , my_yield_threshold{100 * yields_multiplier}
         , my_pause_count{}
         , my_yield_count{}
@@ -350,7 +350,7 @@ inline void handle_context_exception(d1::task_group_context& ctx, bool rethrow =
 
     tbb_exception_ptr* exception = ctx.my_exception.load(std::memory_order_acquire);
     if (exception) {
-        if (ctx.my_exception.compare_exchange_strong(exception, nullptr, 
+        if (ctx.my_exception.compare_exchange_strong(exception, nullptr,
                                                      std::memory_order_acq_rel)) {
             // TODO: An exception should not be captured and then not rethrown.
             //       Either add asserts or remove corner cases.

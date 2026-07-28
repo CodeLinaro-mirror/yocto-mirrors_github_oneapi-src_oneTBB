@@ -18,6 +18,7 @@
 #ifndef _TBB_waiters_H
 #define _TBB_waiters_H
 
+#include <chrono>
 #include "oneapi/tbb/detail/_task.h"
 #include "scheduler_common.h"
 #include "arena.h"
@@ -31,7 +32,7 @@ inline d1::task* get_self_recall_task(arena_slot& slot);
 
 class waiter_base {
 public:
-    waiter_base(arena& a, int yields_multiplier = 1) : my_arena(a), my_backoff(int(a.my_num_slots), yields_multiplier) {}
+    waiter_base(arena& a, int yields_multiplier = 0) : my_arena(a), my_backoff(int(a.my_num_slots), yields_multiplier) {}
 
     bool pause() {
         if (my_backoff.pause()) {
@@ -65,6 +66,8 @@ public:
         if (is_worker_should_leave(slot)) {
             if (is_delayed_leave_enabled()) {
                 static constexpr std::chrono::microseconds worker_wait_leave_duration(1000);
+                static constexpr int max_pauses = 16;
+                int pauses = 0;
                 static_assert(worker_wait_leave_duration > std::chrono::steady_clock::duration(1),
                               "Clock resolution is not enough for measured interval.");
 
@@ -81,7 +84,15 @@ public:
                     {
                         break;
                     }
-                    d0::yield();
+                    if (pauses++ < max_pauses) {
+                        prolonged_pause();
+                    }  else {
+                        #if WIN32 || _WIN64
+                            d0::yield;
+                        #else
+                            std::this_thread::sleep_for(std::chrono::microseconds(100));
+                        #endif
+                    }
                 }
             }
             // Leave dispatch loop
@@ -113,7 +124,7 @@ private:
        return my_arena.my_thread_leave.is_retention_allowed();
 #else
        return !governor::hybrid_cpu();
-#endif   
+#endif
     }
 
     bool is_worker_should_leave(arena_slot& slot) const {
@@ -155,7 +166,7 @@ protected:
 class external_waiter : public sleep_waiter {
 public:
     external_waiter(arena& a, d1::wait_context& wo)
-        : sleep_waiter(a, /*yields_multiplier*/10), my_wait_ctx(wo)
+        : sleep_waiter(a, /*yields_multiplier*/0), my_wait_ctx(wo)
         {}
 
     bool continue_execution(arena_slot& slot, d1::task*& t) const {
