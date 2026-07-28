@@ -15,6 +15,7 @@
 */
 
 #include "thread_dispatcher.h"
+#include "scheduler_common.h"
 #include "threading_control.h"
 
 namespace tbb {
@@ -199,7 +200,7 @@ void thread_dispatcher::process(job& j) {
         // It might result in a busy-loop checking for my_slack<0 and calling this method instantly.
         // the yield refines this spinning.
         if ( !i ) {
-            yield();
+            prolonged_pause();
         }
     }
 }

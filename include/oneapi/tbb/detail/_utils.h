@@ -72,7 +72,12 @@ public:
             count *= 2;
         } else {
             // Pause is so long that we might as well yield CPU to scheduler.
-            yield();
+            #if WIN32 || _WIN64
+                yield();
+            #else
+                machine_pause(count);
+                count *= 2;
+            #endif
         }
     }
 
