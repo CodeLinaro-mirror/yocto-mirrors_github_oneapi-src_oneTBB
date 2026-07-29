@@ -223,12 +223,12 @@ inline std::uint64_t machine_time_stamp() {
 #endif
 }
 
-inline void prolonged_pause_impl() {
+inline void prolonged_pause_impl(int deadline) {
     // Assumption based on practice: 1000-2000 ticks seems to be a suitable invariant for the
     // majority of platforms. Currently, skip platforms that define __TBB_STEALING_PAUSE
     // because these platforms require very careful tuning.
     std::uint64_t prev = machine_time_stamp();
-    const std::uint64_t finish = prev + 1000;
+    const std::uint64_t finish = prev + deadline;
     atomic_backoff backoff;
     do {
         backoff.bounded_pause();
@@ -240,14 +240,14 @@ inline void prolonged_pause_impl() {
     } while (prev < finish);
 }
 #else
-inline void prolonged_pause_impl() {
+inline void prolonged_pause_impl(int deadline) {
 #ifdef __TBB_ipf
     static const long PauseTime = 1500;
 #else
     static const long PauseTime = 80;
 #endif
     // TODO IDEA: Update PauseTime adaptively?
-    machine_pause(PauseTime);
+    machine_pause(int(PauseTime * deadline / 1000));
 }
 #endif
 
@@ -264,7 +264,7 @@ inline void prolonged_pause(int deadline = 1000) {
     }
     else
 #endif
-    prolonged_pause_impl();
+    prolonged_pause_impl(deadline);
 }
 
 // TODO: investigate possibility to work with number of CPU cycles
@@ -282,7 +282,7 @@ public:
     // the time it takes for a thread to be woken up. Doing so would guarantee that we do
     // no worse than 2x the optimal spin time. Or perhaps a time-slice quantum is the right amount.
     stealing_loop_backoff(int num_workers, int yields_multiplier)
-        : my_pause_threshold{ 3 * (num_workers + 1) }
+        : my_pause_threshold{ 2 * (num_workers + 1) }
         , my_yield_threshold{100 * yields_multiplier}
         , my_pause_count{}
         , my_yield_count{}
@@ -291,7 +291,11 @@ public:
         prolonged_pause();
         if (my_pause_count++ >= my_pause_threshold) {
             my_pause_count = my_pause_threshold;
+#if _WIN32 || _WIN64
             d0::yield();
+#else
+            prolonged_pause(500);
+#endif
             if (my_yield_count++ >= my_yield_threshold) {
                 my_yield_count = my_yield_threshold;
                 return true;
