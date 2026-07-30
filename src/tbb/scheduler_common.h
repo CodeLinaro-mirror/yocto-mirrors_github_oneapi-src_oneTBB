@@ -18,6 +18,8 @@
 #ifndef _TBB_scheduler_common_H
 #define _TBB_scheduler_common_H
 
+#include <chrono>
+#include <thread>
 #include "oneapi/tbb/detail/_utils.h"
 #include "oneapi/tbb/detail/_template_helpers.h"
 #include "oneapi/tbb/detail/_task.h"
@@ -294,7 +296,7 @@ public:
 #if _WIN32 || _WIN64
             d0::yield();
 #else
-            prolonged_pause(500);
+            std::this_thread::sleep_for(std::chrono::microseconds{100});
 #endif
             if (my_yield_count++ >= my_yield_threshold) {
                 my_yield_count = my_yield_threshold;
