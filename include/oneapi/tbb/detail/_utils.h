@@ -18,8 +18,6 @@
 #ifndef __TBB_detail__utils_H
 #define __TBB_detail__utils_H
 
-#include <chrono>
-#include <thread>
 #include <type_traits>
 #include <cstdint>
 #include <atomic>
@@ -77,7 +75,7 @@ public:
 #if _WIN32 || _WIN64
             yield();
 #else
-            std::this_thread::sleep_for(std::chrono::microseconds{100});
+            machine_pause(count);
 #endif
         }
     }
