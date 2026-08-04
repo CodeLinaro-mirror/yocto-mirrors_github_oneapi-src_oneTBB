@@ -26,11 +26,28 @@
 #include "common/utils_concurrency_limit.h"
 #include "common/spin_barrier.h"
 
+#include "oneapi/tbb/detail/_parallel_phase.h"
+#include "src/tbb/misc.h"
 #include "tbb/global_control.h"
 #include "tbb/task_arena.h"
 
+// For detecting hybrid CPU
+#include "../src/tbb/misc.cpp"
+// For thread_leave_manager
+#include "../src/tbb/arena.h"
+
 using phase_flags = tbb::task_arena::parallel_phase::flags;
 using end_with_fast_leave = tbb::task_arena::parallel_phase::end_with_fast_leave;
+
+using tbb::detail::r1::cpu_features_type;
+using tbb::detail::r1::detect_cpu_features;
+using tbb::detail::r1::thread_leave_manager;
+
+static bool is_hybrid_cpu = []{
+    cpu_features_type features;
+    detect_cpu_features(features);
+    return features.hybrid;
+}();
 
 void active_wait_for(std::chrono::microseconds duration) {
     for (auto t1 = std::chrono::steady_clock::now(), t2 = t1;
@@ -262,6 +279,58 @@ public:
     {}
 };
 
+//! \brief \ref error_guessing
+TEST_CASE("Test thread_leave_manager state machine") {
+    thread_leave_manager tlm;
+    tlm.set_initial_state(tbb::task_arena::leave_policy::fast);
+    REQUIRE(!tlm.is_retention_allowed());
+
+    {
+        tbb::global_control gc(tbb::global_control::leave_policy, tbb::task_arena::leave_policy::fast);
+        tlm.set_initial_state(tbb::task_arena::leave_policy::automatic);
+        REQUIRE(!tlm.is_retention_allowed());
+    }
+
+    REQUIRE(!tlm.is_retention_allowed());
+    tlm.register_parallel_phase();
+    REQUIRE(tlm.is_retention_allowed());
+    tlm.unregister_parallel_phase(0);
+
+    tlm.set_initial_state(tbb::task_arena::leave_policy::automatic);
+    if (tlm.is_retention_allowed()) {
+        tlm.register_parallel_phase();
+        REQUIRE(tlm.is_retention_allowed());
+        tlm.unregister_parallel_phase(tbb::detail::d1::phase::end_fast_leave);
+        REQUIRE(!tlm.is_retention_allowed());
+        tlm.reset_if_needed();
+        REQUIRE(tlm.is_retention_allowed());
+    }
+}
+
+//! \brief \ref stress \ref error_guessing
+TEST_CASE("Test thread_leave_manager under contention") {
+    thread_leave_manager tlm;
+    tlm.set_initial_state(tbb::task_arena::leave_policy::fast);
+
+    const unsigned num_threads = utils::get_platform_max_threads();
+    constexpr int iters = 1000;
+
+    utils::NativeParallelFor(num_threads, [&](unsigned idx) {
+        for (int i = 0; i < iters; ++i) {
+            tlm.register_parallel_phase();
+            REQUIRE(tlm.is_retention_allowed());
+            // Exercise both fast-leave and non-fast-leave unregister paths.
+            std::uintptr_t flags = ((i + idx) % 2) ? std::uintptr_t(tbb::detail::d1::phase::end_fast_leave)
+                                                    : std::uintptr_t(0);
+            tlm.unregister_parallel_phase(flags);
+            // Reset should never disturb the state
+            tlm.reset_if_needed();
+        }
+    });
+
+    REQUIRE(!tlm.is_retention_allowed());
+}
+
 //! \brief \ref interface \ref requirement
 TEST_CASE("Test global_control leave_policy active_value") {
     using tbb::global_control;
@@ -307,7 +376,8 @@ TEST_CASE("Test global_control leave_policy active_value") {
 TEST_CASE("Check that workers leave faster with leave_policy::fast") {
     // Test measures workers start time, so no there is no point to
     // measure it with workerless arena
-    if (utils::get_platform_max_threads() < 2) {
+    // Also disable for hybrid CPU, as internally automatic leave policy translates into "fast" policy
+    if (utils::get_platform_max_threads() < 2 || is_hybrid_cpu) {
         return;
     }
     tbb::task_arena ta_automatic_leave {
@@ -397,7 +467,7 @@ TEST_CASE("Parallel Phase retains workers in task_arena") {
 
 //! \brief \ref interface \ref requirement
 TEST_CASE("Test one-time fast leave") {
-    if (utils::get_platform_max_threads() < 2) {
+    if (utils::get_platform_max_threads() < 2 || is_hybrid_cpu) {
         return;
     }
     tbb::task_arena ta1{};
